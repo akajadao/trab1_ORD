@@ -4,42 +4,46 @@ Jader Alves dos Santos - RA120286
 Janaina Maria Cera da Silva - RA115832
 Lucas Rodrigues Fedrigo - RA129060"""
 
-def escreve_reg(arquivo: str, registro: str, hashmap_ids: dict = None):
-    # Se hashmap_ids não for passado, cria um vazio para evitar erros
+def remove_reg(id_reg, hashmap_id: dict):
+    offset = hashmap_id[id_reg]
+
+def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
     if hashmap_ids is None:
         hashmap_ids = {}
 
-    with open(arquivo, 'r+b') as arq:
-        cab_bytes = arq.read(4)
-        cab = int.from_bytes(cab_bytes, byteorder='big', signed=True)
-        if cab == -1:
-            arq.seek(0, 2)  # vai para o final do arquivo
+    pos_atual = arq.tell()
+    arq.seek(0)
+    cab_bytes = arq.read(4)
+    cab = int.from_bytes(cab_bytes, byteorder='big', signed=True)
 
-            campos = registro.strip('|').split('|')
-            if len(campos) < 7:
-                raise ValueError("Registro incompleto. Esperado 7 campos.")
+    if cab == -1:
+        arq.seek(0, 2)  # vai para o final do arquivo
 
-            offset = arq.tell()
-            registro_bytes = registro.encode()
-            tam = len(registro_bytes)
-            arq.write(tam.to_bytes(2, byteorder='big', signed=False))
-            arq.write(registro_bytes)
+        campos = registro.strip('|').split('|')
+        if len(campos) < 7:
+            raise ValueError("Registro incompleto. Esperado 7 campos.")
 
-            try:
-                id_reg = int(campos[0])
-                hashmap_ids[id_reg] = offset
-            except ValueError:
-                print(f"ID inválido: {campos[0]}")
+        offset = arq.tell()
+        registro_bytes = registro.encode()
+        tam = len(registro_bytes)
+        arq.write(tam.to_bytes(2, byteorder='big', signed=False))
+        arq.write(registro_bytes)
 
-def insertReg(arquivo: str, registro: str, hashmap_ids: dict) -> None:
-    # Função auxiliar para inserir registro novo (id no registro deve ser válido)
+        print(f'Registro inserido com sucesso: {registro}\nLocal: final do arquivo.')
+
+        try:
+            id_reg = int(campos[0])
+            hashmap_ids[id_reg] = offset
+        except ValueError:
+            print(f"ID inválido: {campos[0]}")
+    arq.seek(pos_atual)  # retorna à posição original, se necessário
+
+def insertReg(arq, registro: str, hashmap_ids: dict) -> None:
     try:
-        escreve_reg(arquivo, registro, hashmap_ids)
-        print(f'Registro inserido com sucesso: {registro}')
+        escreve_reg(arq, registro, hashmap_ids)
     except Exception as e:
         print(f'Erro ao inserir registro: {e}')
 
-    
 def leia_reg(file, com_offset: bool = False) -> tuple | str | None:
     offset = file.tell()
     tam_reg = file.read(2)
@@ -91,18 +95,19 @@ def monta_hashmap(arq: str) -> dict:
 def main(arquivo: str):
     try:
         hashmap_ids: dict = monta_hashmap(arquivo)
-        with open(arquivo, 'rb') as arq:
+        with open(arquivo, 'r+b') as arq:
             cabecalho_bytes = arq.read(4)
             cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
             print(f'Cabeçalho: {cabecalho}')
-            resultado = buscaId(arq, 221, hashmap_ids)
+
+            resultado = buscaId(arq, 113, hashmap_ids)
             print(resultado)
-            insertReg(arquivo, '66|500 Dias com Ela|Marc Webb|2009|Comédia, Drama, Romance|95|Joseph Gordon|', hashmap_ids)
+
+            #novo_registro = '66|500 Dias com Ela|Marc Webb|2009|Comédia, Drama, Romance|95|Joseph Gordon|'
+            #insertReg(arq, novo_registro, hashmap_ids)
 
     except FileNotFoundError:
         print('Arquivo não encontrado!')
-
-
 
 if __name__ == '__main__':
     main('filmes.dat')
