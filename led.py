@@ -4,7 +4,11 @@ Jader Alves dos Santos - RA120286
 Janaina Maria Cera da Silva - RA115832
 Lucas Rodrigues Fedrigo - RA129060"""
 
-def remove_reg(arq, cabecalho: str, id_reg: int, hashmap_ids: dict):
+import sys
+
+def remove_reg(arq, id_reg: int, hashmap_ids: dict):
+    arq.seek(0)
+    cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
     if id_reg not in hashmap_ids:
         print(f'Registro não encontrado!')
         return None
@@ -43,7 +47,6 @@ def remove_reg(arq, cabecalho: str, id_reg: int, hashmap_ids: dict):
     print(f'Local: offset = {offset} bytes ({hex(offset)})')
     return True
 
-
 def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
     if hashmap_ids is None:
         hashmap_ids = {}
@@ -77,7 +80,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
     melhor_tam = None
     melhor_prox = None
     anterior_offset = None
-    anterior_prox = None
+    anterior_led = None
 
     atual_offset = cab
     while atual_offset != -1:
@@ -102,9 +105,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
                 melhor_tam = tam_disp
                 melhor_prox = prox_led
                 anterior_led = anterior_offset
-                anterior_prox = atual_offset  # atual é próximo do anterior
 
-        # Continua LED
         anterior_offset = atual_offset
         atual_offset = prox_led
 
@@ -113,6 +114,12 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
         arq.seek(melhor_offset)
         arq.write(tam_novo.to_bytes(2, 'big'))
         arq.write(registro_bytes)
+
+        # Preenche com \0 os bytes restantes, se houver
+        sobra = melhor_tam - tam_novo
+        if sobra > 0:
+            arq.write(b'\0' * sobra)
+
         hashmap_ids[id_reg] = melhor_offset
         print(f'Registro reaproveitou espaço (melhor ajuste): {registro}\nOffset: {melhor_offset}')
 
@@ -127,7 +134,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
             buffer = arq.read(10)  # leitura segura
             partes = buffer.decode(errors='ignore').split('|')[0].split('*')
             if len(partes) == 2:
-                novo_id = f"{partes[0]}*{melhor_prox}".ljust(len(partes[0])+len(partes[1])+1)
+                novo_id = f"{partes[0]}*{melhor_prox}".ljust(len(partes[0]) + len(partes[1]) + 1)
                 novo_led = f"{novo_id}|".encode()
                 arq.seek(anterior_led + 2)
                 arq.write(novo_led)
@@ -163,7 +170,7 @@ def leia_reg(file, com_offset: bool = False) -> tuple | str | None:
     else:
         return (offset, '') if com_offset else ''
 
-def buscaId(file, id_reg: int, hashmap_ids: dict) -> str:
+def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
     try:
         if id_reg not in hashmap_ids:
             return f'Erro: registro não encontrado.'
@@ -172,58 +179,143 @@ def buscaId(file, id_reg: int, hashmap_ids: dict) -> str:
         file.seek(offset)
         reg = leia_reg(file)
         reg += f' ({len(reg)+2} bytes)\nLocal: offset = {offset} bytes ({hex(offset)})'
-        return reg
+        print(reg)
+        return True
     except (ValueError, FileNotFoundError) as e:
         return f'Erro: {e}'
 
-def monta_hashmap(arq: str) -> dict:
+def monta_hashmap(arq_file) -> dict:
     hashmap_ids = {}
+    while True:
+        offset, registro = leia_reg(arq_file, True)
+        if offset is None:
+            break
 
-    with open(arq, 'rb') as f:
-        f.read(4)  # pula o cabeçalho da LED
+        if not registro or '|' not in registro:
+            continue  # ignora registros vazios ou inválidos
 
-        while True:
-            offset, registro = leia_reg(f, True)
-            if offset is None:
-                break
+        partes = registro.split('|')
+        id_campo = partes[0]
 
-            if not registro or '|' not in registro:
-                continue  # ignora registros vazios ou inválidos
+        if not id_campo.strip():  # ignora se o ID estiver vazio
+            continue
 
-            partes = registro.split('|')
-            id_campo = partes[0]
-
-            if not id_campo.strip():  # ignora se o ID estiver vazio
-                continue
-
-            if '*' in id_campo:
-                continue  # registro removido (está na LED)
-            else:
-                try:
-                    id_reg = int(id_campo)
-                    hashmap_ids[id_reg] = offset
-                except ValueError:
-                    print(f"ID inválido no offset {offset}: {registro}")
-
+        if '*' in id_campo:
+            continue  # registro removido (está na LED)
+        else:
+            try:
+                id_reg = int(id_campo)
+                hashmap_ids[id_reg] = offset
+            except ValueError:
+                print(f"ID inválido no offset {offset}: {registro}")
     return hashmap_ids
 
-
-def main(arquivo: str):
+def imprime_led(arquivo):
     try:
-        hashmap = monta_hashmap(arquivo)
-        with open(arquivo, 'r+b') as arq:
+        with open(arquivo, 'rb') as arq:
             cabecalho_bytes = arq.read(4)
-            cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
-            print(f'Cabeçalho: {cabecalho}')
-            #resultado = buscaId(arq, 113, hashmap)
-            #print(resultado)
+            cab = int.from_bytes(cabecalho_bytes, 'big', signed=True)
 
-            #novo_registro = '66|500 Dias com Ela|Marc Webb|2009|Comédia, Drama, Romance|95|Joseph Gordon|'
-            #insertReg(arq, novo_registro, hashmap)
-            #remove_reg(arq, cabecalho, 66, hashmap)
+            if cab == -1:
+                print("LED -> fim")
+                print("Total: 0 espaços disponíveis")
+                print("A LED foi impressa com sucesso!")
+                return
+
+            total = 0
+            output = "LED"
+
+            while cab != -1:
+                arq.seek(cab)
+                tam_bytes = arq.read(2)
+                if len(tam_bytes) < 2:
+                    break
+
+                tam = int.from_bytes(tam_bytes, 'big')
+
+                buffer = arq.read(tam)
+                try:
+                    registro = buffer.decode()
+                    id_campo = registro.split('|')[0]
+                    prox = int(id_campo.split('*')[1])
+                except Exception as e:
+                    break
+
+                output += f" -> [offset: {cab}, tam: {tam}]"
+                total += 1
+                cab = prox
+
+            output += " -> fim"
+            print(output)
+            print(f"Total: {total} espaços disponíveis")
+            print("A LED foi impressa com sucesso!")
 
     except FileNotFoundError:
-        print('Arquivo não encontrado!')
+        print("Arquivo não encontrado!")
+    except Exception as e:
+        print(f"Erro ao imprimir LED: {e}")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Uso:")
+        print("  python script.py -p <arquivo>       # Para imprimir a LED")
+        print("  python script.py -e <arquivo>       # Para carregar o arquivo normalmente")
+        return
+
+    flag = sys.argv[1]
+
+    if flag == '-p':
+        if len(sys.argv) < 3:
+            print("Erro: falta o nome do arquivo para imprimir a LED.")
+            return
+        arquivo = sys.argv[2]
+        imprime_led(arquivo)
+
+    elif flag == '-e':
+        if len(sys.argv) < 4:
+            print("Uso: -e <arquivo_dados> <arquivo_operacoes>")
+            return
+        arquivo = sys.argv[2]
+        arquivo_ops = sys.argv[3]
+
+        try:
+            with open(arquivo, 'r+b') as arq:
+                cabecalho_bytes = arq.read(4)
+                cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
+                print(f'Cabeçalho: {cabecalho}')
+                hashmap = monta_hashmap(arq)
+
+                with open(arquivo_ops, 'r', encoding='utf-8') as ops:
+                    for linha in ops:
+                        linha = linha.strip()
+                        if not linha:
+                            continue
+                        op = linha[0]
+                        dado = linha[2:]
+
+                        if op == 'b':
+                            # busca id
+                            id_busca = int(dado)
+                            resultado = buscaId(arq, id_busca, hashmap)
+
+                        elif op == 'i':
+                            # insere registro
+                            registro = dado
+                            insertReg(arq, registro, hashmap)
+
+                        elif op == 'r':
+                            # remove registro
+                            id_remover = int(dado)
+                            remove_reg(arq, id_remover, hashmap)
+
+                        else:
+                            print(f'Operação inválida na linha: {linha}')
+        except FileNotFoundError:
+            print('Arquivo não encontrado!')
+        except Exception as e:
+            print(f'Erro ao processar o arquivo: {e}')
+    else:
+        print(f"Flag desconhecida '{flag}'. Use '-p' para imprimir a LED ou '-e' para abrir arquivo.")
 
 if __name__ == '__main__':
-    main('filmes.dat')
+    main()
