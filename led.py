@@ -4,8 +4,24 @@ Jader Alves dos Santos - RA120286
 Janaina Maria Cera da Silva - RA115832
 Lucas Rodrigues Fedrigo - RA129060"""
 
-def remove_reg(id_reg, hashmap_id: dict):
-    offset = hashmap_id[id_reg]
+def remove_reg(arq, cabecalho:str ,id_reg, hashmap_ids: dict):
+    if id_reg in hashmap_ids:
+        offset = hashmap_ids[id_reg]
+        arq.seek(offset)
+        buffer = leia_reg(arq)
+        old_id = buffer.split('|')[0]
+        new_reg = f'{old_id}*{cabecalho}|'.encode()
+        arq.seek(offset)
+        arq.write(new_reg)
+        arq.seek(0)
+        new_cabecalho = int(old_id)
+        new_cabecalho = new_cabecalho.to_bytes(4)
+        arq.write(new_cabecalho)
+        print(f'Remoção do registro de chave "{id_reg}"\nRegistro removido! ({len(buffer)} bytes)\nLocal: offset = {offset} bytes ({hex(offset)})')
+        return True
+    print(f'Registro não encontrado!')
+    return None
+
 
 def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
     if hashmap_ids is None:
@@ -100,11 +116,12 @@ def main(arquivo: str):
             cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
             print(f'Cabeçalho: {cabecalho}')
 
-            resultado = buscaId(arq, 113, hashmap_ids)
+            resultado = buscaId(arq, 66, hashmap_ids)
             print(resultado)
 
             #novo_registro = '66|500 Dias com Ela|Marc Webb|2009|Comédia, Drama, Romance|95|Joseph Gordon|'
             #insertReg(arq, novo_registro, hashmap_ids)
+            #remove_reg(arq, cabecalho, 66, hashmap_ids)
 
     except FileNotFoundError:
         print('Arquivo não encontrado!')
