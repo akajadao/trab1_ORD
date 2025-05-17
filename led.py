@@ -4,9 +4,41 @@ Jader Alves dos Santos - RA120286
 Janaina Maria Cera da Silva - RA115832
 Lucas Rodrigues Fedrigo - RA129060"""
 
-'LED: menor espaço -> maior espaço'
+'LED best-fit: menor espaço -> maior espaço'
 
 import sys
+import os
+
+def compactarArq(arq_file) -> None:
+    with open('filmes.tmp', 'wb') as f:
+        cab_int = -1
+        cab = cab_int.to_bytes(4, byteorder='big', signed=True)
+        f.write(cab)
+        while True:
+            tam, registro = leia_reg(arq_file, False, True)
+            if tam == -1:
+                break
+            
+            if not registro or '|' not in registro:
+                continue  # ignora registros vazios ou inválidos
+            
+            partes = registro.split('|')
+            id_campo = partes[0]
+    
+            if not id_campo.strip():  # ignora se o ID estiver vazio
+                continue
+            
+            if '*' in str(id_campo):
+                continue
+            else:
+                try:
+                    f.write(tam)
+                    registro = registro.encode()
+                    f.write(registro)
+                except ValueError:
+                    print(f"Tamanho inválido {int.from_bytes(tam, 'big', False)}: {registro}")
+        print(f'O arquivo {sys.argv[2]} foi compactado com sucesso!')
+        return None
 
 def atualizaReg(arq, lista):
     for i, (offset, tamanho_atual) in enumerate(lista):
@@ -24,7 +56,7 @@ def atualizaReg(arq, lista):
             if lista[j][1] > tamanho_atual:
                 offset_maior = lista[j][0]
                 break
-
+        resto = buffer.split('|', 1)[1] if '|' in buffer else ''
         novo_valor = f"{id_base}*{offset_maior}|".ljust(tam)
 
         arq.seek(offset + 2)
@@ -32,7 +64,6 @@ def atualizaReg(arq, lista):
 
 def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
     arq.seek(0)
-    cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
     if id_reg not in hashmap_ids:
         print(f'Registro não encontrado!')
         return None
@@ -179,20 +210,34 @@ def insertReg(arq, registro: str, hashmap_ids: dict, lista_led: list) -> None:
     except Exception as e:
         print(f'Erro ao inserir registro: {e}')
 
-def leia_reg(file, com_offset: bool = False) -> tuple | str | None:
+def leia_reg(file, com_offset: bool = False, compactar: bool = False) -> tuple | str | None:
     offset = file.tell()
     tam_reg = file.read(2)
     if len(tam_reg) < 2:
-        return (None, None) if com_offset else None
+        if com_offset:
+            return None, None
+        if compactar:
+            return -1, None
+        else:
+            return None
 
     tam = int.from_bytes(tam_reg, byteorder='big', signed=False)
 
     if tam > 0:
         buffer = file.read(tam)
         buffer = buffer.decode()
-        return (offset, buffer) if com_offset else buffer
+        if com_offset:
+            return offset, buffer
+        elif compactar:
+            return tam_reg, buffer
+        else:
+            return buffer
     else:
-        return (offset, '') if com_offset else ''
+        if com_offset:
+            return offset, ''
+        if compactar:
+            return -1, ''
+        return ''
 
 def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
     try:
@@ -203,7 +248,6 @@ def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
         file.seek(offset)
         reg = leia_reg(file)
         reg += f' ({len(reg)+2} bytes)\nLocal: offset = {offset} bytes ({hex(offset)})'
-        print(reg)
         return True
     except (ValueError, FileNotFoundError) as e:
         return f'Erro: {e}'
@@ -213,7 +257,6 @@ def monta_hashmap(arq_file) -> dict:
     lista_led = []
     while True:
         offset, registro = leia_reg(arq_file, True)
-        print(offset, registro)
         if offset is None:
             break
 
@@ -284,8 +327,9 @@ def imprime_led(arquivo):
 def main():
     if len(sys.argv) < 2:
         print("Uso:")
-        print("  python script.py -p <arquivo>       # Para imprimir a LED")
-        print("  python script.py -e <arquivo>       # Para carregar o arquivo normalmente")
+        print("  python led.py -p <arquivo>       # Para imprimir a LED")
+        print("  python led.py -e <arquivo>       # Para realizar operações")
+        print("  python led.py -c <arquivo>       # Para compactar o arquivo")
         return
 
     flag = sys.argv[1]
@@ -340,46 +384,13 @@ def main():
         except UnicodeDecodeError:
             print(f'Erro: o arquivo {sys.argv[2]} precisa ser desfragmentado!')
     elif flag == '-c':
-        try:
-            with open(arquivo, 'rb') as arq:
-                cabecalho_bytes = arq.read(4)
-                cab = int.from_bytes(cabecalho_bytes, 'big', signed=True)
-
-                if cab == -1:
-                    print("LED -> fim")
-                    print("Total: 0 espaços disponíveis")
-                    print("A LED foi impressa com sucesso!")
-                    return
-
-                total = 0
-                output = "LED"
-
-                while cab != -1:
-                    arq.seek(cab)
-                    tam_bytes = arq.read(2)
-                    if len(tam_bytes) < 2:
-                        break
-
-                    tam = int.from_bytes(tam_bytes, 'big')
-
-                    buffer = arq.read(tam)
-                    try:
-                        registro = buffer.decode()
-                        id_campo = registro.split('|')[0]
-                        prox = int(id_campo.split('*')[1])
-                    except Exception as e:
-                        break
-
-                    output += f" -> [offset: {cab}, tam: {tam}]"
-                    total += 1
-                    cab = prox
-
-                output += " -> fim"
-                print(output)
-                print(f"Total: {total} espaços disponíveis")
-                print("A LED foi impressa com sucesso!")
-        except Exception as e:
-            print(f'Erro: {e}')
+        arquivo = sys.argv[2]
+        with open(arquivo, 'r+b') as arq:
+            cabecalho_bytes = arq.read(4)
+            cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
+            compactarArq(arq)
+        os.replace('filmes.tmp', sys.argv[2])
+        print(f'Renomeado com sucesso!')
     else:
         print(f"Flag desconhecida '{flag}'. Use '-p' para imprimir a LED ou '-e' para abrir arquivo.")
 
