@@ -4,9 +4,33 @@ Jader Alves dos Santos - RA120286
 Janaina Maria Cera da Silva - RA115832
 Lucas Rodrigues Fedrigo - RA129060"""
 
+'LED: menor espaço -> maior espaço'
+
 import sys
 
-def remove_reg(arq, id_reg: int, hashmap_ids: dict):
+def atualizaReg(arq, lista):
+    for i, (offset, tamanho_atual) in enumerate(lista):
+        arq.seek(offset)
+        tam_bytes = arq.read(2)
+        if len(tam_bytes) < 2:
+            continue  # pula se falhar leitura
+
+        tam = int.from_bytes(tam_bytes, byteorder='big', signed=False)
+        buffer = arq.read(tam).decode(errors='ignore')
+
+        id_base = buffer.split('*')[0].split('|')[0]  # garante que só o ID fique
+        offset_maior = -1
+        for j in range(i + 1, len(lista)):
+            if lista[j][1] > tamanho_atual:
+                offset_maior = lista[j][0]
+                break
+
+        novo_valor = f"{id_base}*{offset_maior}|"
+
+        arq.seek(offset + 2)
+        arq.write(novo_valor.encode().ljust(tam,b'\0'))
+
+def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
     arq.seek(0)
     cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
     if id_reg not in hashmap_ids:
@@ -28,18 +52,14 @@ def remove_reg(arq, id_reg: int, hashmap_ids: dict):
         print(f'Registro inválido ou vazio no offset {offset}')
         return None
 
-    # Substitui apenas o primeiro campo (ID) por "ID*cabecalho"
-    campos[0] = f"{id_reg}*{cabecalho}"
-    novo_reg = '|'.join(campos)
-    novo_reg_bytes = novo_reg.encode()
+    lista_led.append([offset, tam+2])
+    lista_led.sort(key=lambda x: x[1])
 
-    arq.seek(offset)
-    arq.write(tam_bytes)  # reescreve o tamanho
-    arq.write(novo_reg_bytes)
+    atualizaReg(arq, lista_led)
 
     # Atualiza o cabeçalho da LED
     arq.seek(0)
-    novo_cab = offset.to_bytes(4, byteorder='big', signed=True)
+    novo_cab = lista_led[0][0].to_bytes(4, byteorder='big', signed=True)
     arq.write(novo_cab)
 
     print(f'Remoção do registro de chave "{id_reg}"')
@@ -47,7 +67,7 @@ def remove_reg(arq, id_reg: int, hashmap_ids: dict):
     print(f'Local: offset = {offset} bytes ({hex(offset)})')
     return True
 
-def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
+def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
     if hashmap_ids is None:
         hashmap_ids = {}
 
@@ -147,11 +167,14 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None):
         hashmap_ids[id_reg] = offset
         print(f'Registro inserido no final (sem espaço adequado): {registro}\nOffset: {offset}')
 
+    if lista_led:
+        lista_led[:] = [item for item in lista_led if item[0] != melhor_offset]
+
     arq.seek(pos_atual)
 
-def insertReg(arq, registro: str, hashmap_ids: dict) -> None:
+def insertReg(arq, registro: str, hashmap_ids: dict, lista_led: list) -> None:
     try:
-        escreve_reg(arq, registro, hashmap_ids)
+        escreve_reg(arq, registro, hashmap_ids, lista_led)
     except Exception as e:
         print(f'Erro ao inserir registro: {e}')
 
@@ -186,6 +209,7 @@ def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
 
 def monta_hashmap(arq_file) -> dict:
     hashmap_ids = {}
+    lista_led = []
     while True:
         offset, registro = leia_reg(arq_file, True)
         if offset is None:
@@ -201,14 +225,14 @@ def monta_hashmap(arq_file) -> dict:
             continue
 
         if '*' in id_campo:
-            continue  # registro removido (está na LED)
+            lista_led.append([offset, len(registro+2)])  # registro removido (está na LED)
         else:
             try:
                 id_reg = int(id_campo)
                 hashmap_ids[id_reg] = offset
             except ValueError:
                 print(f"ID inválido no offset {offset}: {registro}")
-    return hashmap_ids
+    return hashmap_ids, lista_led
 
 def imprime_led(arquivo):
     try:
@@ -283,8 +307,7 @@ def main():
                 cabecalho_bytes = arq.read(4)
                 cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
                 print(f'Cabeçalho: {cabecalho}')
-                hashmap = monta_hashmap(arq)
-
+                hashmap, lista_led = monta_hashmap(arq)
                 with open(arquivo_ops, 'r', encoding='utf-8') as ops:
                     for linha in ops:
                         linha = linha.strip()
@@ -301,12 +324,12 @@ def main():
                         elif op == 'i':
                             # insere registro
                             registro = dado
-                            insertReg(arq, registro, hashmap)
+                            insertReg(arq, registro, hashmap, lista_led)
 
                         elif op == 'r':
                             # remove registro
                             id_remover = int(dado)
-                            remove_reg(arq, id_remover, hashmap)
+                            remove_reg(arq, id_remover, hashmap, lista_led)
 
                         else:
                             print(f'Operação inválida na linha: {linha}')
