@@ -25,10 +25,10 @@ def atualizaReg(arq, lista):
                 offset_maior = lista[j][0]
                 break
 
-        novo_valor = f"{id_base}*{offset_maior}|"
+        novo_valor = f"{id_base}*{offset_maior}|".ljust(tam)
 
         arq.seek(offset + 2)
-        arq.write(novo_valor.encode().ljust(tam,b'\0'))
+        arq.write(novo_valor.encode())
 
 def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
     arq.seek(0)
@@ -109,7 +109,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
         if len(tam_bytes) < 2:
             break
 
-        tam_disp = int.from_bytes(tam_bytes, 'big')
+        tam_disp = int.from_bytes(tam_bytes, 'big',signed=False)
         buffer = arq.read(tam_disp)
 
         try:
@@ -132,7 +132,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
     if melhor_offset is not None:
         # Reaproveita o melhor espaço encontrado
         arq.seek(melhor_offset)
-        arq.write(tam_novo.to_bytes(2, 'big'))
+        arq.write(melhor_tam.to_bytes(2, 'big', signed=False))
         arq.write(registro_bytes)
 
         # Preenche com \0 os bytes restantes, se houver
@@ -169,6 +169,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
 
     if lista_led:
         lista_led[:] = [item for item in lista_led if item[0] != melhor_offset]
+    atualizaReg(arq, lista_led)
 
     arq.seek(pos_atual)
 
@@ -212,6 +213,7 @@ def monta_hashmap(arq_file) -> dict:
     lista_led = []
     while True:
         offset, registro = leia_reg(arq_file, True)
+        print(offset, registro)
         if offset is None:
             break
 
@@ -224,8 +226,8 @@ def monta_hashmap(arq_file) -> dict:
         if not id_campo.strip():  # ignora se o ID estiver vazio
             continue
 
-        if '*' in id_campo:
-            lista_led.append([offset, len(registro+2)])  # registro removido (está na LED)
+        if '*' in str(id_campo):
+            lista_led.append([offset, len(registro)+2])  # registro removido (está na LED)
         else:
             try:
                 id_reg = int(id_campo)
@@ -335,8 +337,49 @@ def main():
                             print(f'Operação inválida na linha: {linha}')
         except FileNotFoundError:
             print('Arquivo não encontrado!')
+        except UnicodeDecodeError:
+            print(f'Erro: o arquivo {sys.argv[2]} precisa ser desfragmentado!')
+    elif flag == '-c':
+        try:
+            with open(arquivo, 'rb') as arq:
+                cabecalho_bytes = arq.read(4)
+                cab = int.from_bytes(cabecalho_bytes, 'big', signed=True)
+
+                if cab == -1:
+                    print("LED -> fim")
+                    print("Total: 0 espaços disponíveis")
+                    print("A LED foi impressa com sucesso!")
+                    return
+
+                total = 0
+                output = "LED"
+
+                while cab != -1:
+                    arq.seek(cab)
+                    tam_bytes = arq.read(2)
+                    if len(tam_bytes) < 2:
+                        break
+
+                    tam = int.from_bytes(tam_bytes, 'big')
+
+                    buffer = arq.read(tam)
+                    try:
+                        registro = buffer.decode()
+                        id_campo = registro.split('|')[0]
+                        prox = int(id_campo.split('*')[1])
+                    except Exception as e:
+                        break
+
+                    output += f" -> [offset: {cab}, tam: {tam}]"
+                    total += 1
+                    cab = prox
+
+                output += " -> fim"
+                print(output)
+                print(f"Total: {total} espaços disponíveis")
+                print("A LED foi impressa com sucesso!")
         except Exception as e:
-            print(f'Erro ao processar o arquivo: {e}')
+            print(f'Erro: {e}')
     else:
         print(f"Flag desconhecida '{flag}'. Use '-p' para imprimir a LED ou '-e' para abrir arquivo.")
 
