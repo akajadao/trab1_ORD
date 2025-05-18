@@ -63,16 +63,16 @@ def atualizaReg(arq, lista):
         arq.write(novo_valor.encode())
 
 def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
-    arq.seek(0)
+    print(f'Remoção do registro de chave "{id_reg}"')
     if id_reg not in hashmap_ids:
-        print(f'Registro não encontrado!')
+        print(f'Registro não encontrado!\n')
         return None
 
     offset = hashmap_ids[id_reg]
     arq.seek(offset)
     tam_bytes = arq.read(2)
     if len(tam_bytes) < 2:
-        print(f'Erro ao ler tamanho do registro no offset {offset}')
+        print(f'Erro ao ler tamanho do registro no offset {offset}\n')
         return None
 
     tam = int.from_bytes(tam_bytes, byteorder='big', signed=False)
@@ -80,7 +80,7 @@ def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
 
     campos = buffer.split('|')
     if not campos or len(campos[0]) == 0:
-        print(f'Registro inválido ou vazio no offset {offset}')
+        print(f'Registro inválido ou vazio no offset {offset}\n')
         return None
 
     lista_led.append([offset, tam+2])
@@ -92,15 +92,16 @@ def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
     arq.seek(0)
     novo_cab = lista_led[0][0].to_bytes(4, byteorder='big', signed=True)
     arq.write(novo_cab)
-
-    print(f'Remoção do registro de chave "{id_reg}"')
+    hashmap_ids.pop(id_reg)
     print(f'Registro removido! ({tam} bytes)')
-    print(f'Local: offset = {offset} bytes ({hex(offset)})')
+    print(f'Local: offset = {offset} bytes ({hex(offset)})\n')
     return True
 
 def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
-    if hashmap_ids is None:
-        hashmap_ids = {}
+    print(f'Inserção do registro de chave "{registro.split('|')[0]}" ({len(registro)+1} bytes)')
+    if int(registro.split('|')[0]) in hashmap_ids:
+        print('Erro: já existe um registro com essa chave.\n')
+        return None
 
     pos_atual = arq.tell()
     arq.seek(0)
@@ -109,7 +110,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
 
     campos = registro.strip('|').split('|')
     if len(campos) < 7:
-        raise ValueError("Registro incompleto. Esperado 7 campos.")
+        raise ValueError("Registro incompleto. Esperado 7 campos.\n")
 
     id_reg = int(campos[0])
     registro_bytes = registro.encode()
@@ -122,9 +123,9 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
         arq.write(tam_novo.to_bytes(2, 'big', signed=False))
         arq.write(registro_bytes)
         hashmap_ids[id_reg] = offset
-        print(f'Registro inserido no final: {registro}\nOffset: {offset}')
+        print(f'Local: fim do arquivo\n')
         arq.seek(pos_atual)
-        return
+        return None
 
     # Melhor ajuste
     melhor_offset = None
@@ -171,9 +172,6 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
         if sobra > 0:
             arq.write(b'\0' * sobra)
 
-        hashmap_ids[id_reg] = melhor_offset
-        print(f'Registro reaproveitou espaço (melhor ajuste): {registro}\nOffset: {melhor_offset}')
-
         if melhor_offset == cab:
             # atualizou o primeiro nó da LED, atualiza cabeçalho
             arq.seek(0)
@@ -189,14 +187,17 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
                 novo_led = f"{novo_id}|".encode()
                 arq.seek(anterior_led + 2)
                 arq.write(novo_led)
+
+        hashmap_ids[id_reg] = melhor_offset
+        print(f'Local: offset = {melhor_offset} bytes ({hex(melhor_offset)})\n')
+
     else:
-        # Insere no final
         arq.seek(0, 2)
         offset = arq.tell()
         arq.write(tam_novo.to_bytes(2, 'big'))
         arq.write(registro_bytes)
         hashmap_ids[id_reg] = offset
-        print(f'Registro inserido no final (sem espaço adequado): {registro}\nOffset: {offset}')
+        print(f'Local: fim do arquivo\n')
 
     if lista_led:
         lista_led[:] = [item for item in lista_led if item[0] != melhor_offset]
@@ -205,10 +206,7 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
     arq.seek(pos_atual)
 
 def insertReg(arq, registro: str, hashmap_ids: dict, lista_led: list) -> None:
-    try:
-        escreve_reg(arq, registro, hashmap_ids, lista_led)
-    except Exception as e:
-        print(f'Erro ao inserir registro: {e}')
+    escreve_reg(arq, registro, hashmap_ids, lista_led)
 
 def leia_reg(file, com_offset: bool = False, compactar: bool = False) -> tuple | str | None:
     offset = file.tell()
@@ -241,13 +239,16 @@ def leia_reg(file, com_offset: bool = False, compactar: bool = False) -> tuple |
 
 def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
     try:
+        print(f'Busca pelo registro de chave "{id_reg}"')
         if id_reg not in hashmap_ids:
-            return f'Erro: registro não encontrado.'
+            print(f'Erro: registro não encontrado.\n')
+            return None
 
         offset = hashmap_ids[id_reg]
         file.seek(offset)
-        reg = leia_reg(file)
-        reg += f' ({len(reg)+2} bytes)\nLocal: offset = {offset} bytes ({hex(offset)})'
+        tam, reg = leia_reg(file, False, True)
+        reg += f' ({int.from_bytes(tam, byteorder='big', signed=False)} bytes)\nLocal: offset = {offset} bytes ({hex(offset)})\n'
+        print(reg)
         return True
     except (ValueError, FileNotFoundError) as e:
         return f'Erro: {e}'
@@ -282,6 +283,7 @@ def monta_hashmap(arq_file) -> dict:
 def imprime_led(arquivo):
     try:
         with open(arquivo, 'rb') as arq:
+            arq.seek(0)
             cabecalho_bytes = arq.read(4)
             cab = int.from_bytes(cabecalho_bytes, 'big', signed=True)
 
@@ -299,7 +301,7 @@ def imprime_led(arquivo):
                 tam_bytes = arq.read(2)
                 if len(tam_bytes) < 2:
                     break
-
+                
                 tam = int.from_bytes(tam_bytes, 'big')
 
                 buffer = arq.read(tam)
@@ -308,6 +310,7 @@ def imprime_led(arquivo):
                     id_campo = registro.split('|')[0]
                     prox = int(id_campo.split('*')[1])
                 except Exception as e:
+                    print(e)
                     break
 
                 output += f" -> [offset: {cab}, tam: {tam}]"
@@ -352,7 +355,7 @@ def main():
             with open(arquivo, 'r+b') as arq:
                 cabecalho_bytes = arq.read(4)
                 cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
-                print(f'Cabeçalho: {cabecalho}')
+                #print(f'Cabeçalho: {cabecalho}')
                 hashmap, lista_led = monta_hashmap(arq)
                 with open(arquivo_ops, 'r', encoding='utf-8') as ops:
                     for linha in ops:
@@ -365,7 +368,7 @@ def main():
                         if op == 'b':
                             # busca id
                             id_busca = int(dado)
-                            resultado = buscaId(arq, id_busca, hashmap)
+                            buscaId(arq, id_busca, hashmap)
 
                         elif op == 'i':
                             # insere registro
@@ -379,6 +382,7 @@ def main():
 
                         else:
                             print(f'Operação inválida na linha: {linha}')
+                    print(f'As operações do arquivo {sys.argv[1]}/{sys.argv[2]} foram executadas com sucesso!')
         except FileNotFoundError:
             print('Arquivo não encontrado!')
         except UnicodeDecodeError:
