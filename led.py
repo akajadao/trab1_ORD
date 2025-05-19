@@ -2,14 +2,21 @@
 Alunos:
 Jader Alves dos Santos - RA120286
 Janaina Maria Cera da Silva - RA115832
-Lucas Rodrigues Fedrigo - RA129060"""
+Lucas Rodrigues Fedrigo - RA129060
 
 'LED best-fit: menor espaço -> maior espaço'
+
+O sistema compõe de dois hashmaps de responsáveis pela organização em memória dos dados do arquivo, e após cada operação
+as alterações são salvas no arquivo em si.
+"""
 
 import sys
 import os
 
 def compactarArq(arq_file) -> None:
+    """Função responsável pela remoção da fragmentação externa do arquivo binário.
+    Remove apenas os registros marcados para remoção e não os registros que possuem algum tipo de fragmentação interna
+    Reescreve o cabeçalho em -1 indicando que não há mais espaços disponíveis na LED."""
     with open('filmes.tmp', 'wb') as f:
         cab_int = -1
         cab = cab_int.to_bytes(4, byteorder='big', signed=True)
@@ -41,6 +48,8 @@ def compactarArq(arq_file) -> None:
         return None
 
 def atualizaReg(arq, lista):
+    """Função responsável pela ordenação interna da led best-fit, funciona da seguinte maneira:
+    Compara lista1(offset, tamanho) com lista2(offset, tamanho) -> o tamanho menor é assumido como primeiro na led (em outras funções, não nessa) e aqui escrevemos no arquivo a ordenação com * nos espaços corretos"""
     for i, (offset, tamanho_atual) in enumerate(lista):
         arq.seek(offset)
         tam_bytes = arq.read(2)
@@ -63,6 +72,7 @@ def atualizaReg(arq, lista):
         arq.write(novo_valor.encode())
 
 def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
+    """Função critica no nosso CRUD, retorna na variável lista_led qual item foi removido e offset, chamando atualizaReg para atualizar os ponteiros no arquivo, também atualiza o ponteiro no cabeçalho, de acordo com a lista"""
     print(f'Remoção do registro de chave "{id_reg}"')
     if id_reg not in hashmap_ids:
         print(f'Registro não encontrado!\n')
@@ -97,7 +107,9 @@ def remove_reg(arq, id_reg: int, hashmap_ids: dict, lista_led):
     print(f'Local: offset = {offset} bytes ({hex(offset)})\n')
     return True
 
-def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
+def insertReg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
+    """Função que escreve os registros, para registros com espaço suficiente em um item da LED, é feita a comparação de tamanhos, o menor espaço suficiente encontrado será o escolhido, caso contrário, vai para o final do arquivo.
+    Também chama atualizaReg para atualizar os novos ponteiros disponíveis, removendo o ponteiro atual."""
     print(f'Inserção do registro de chave "{registro.split('|')[0]}" ({len(registro)+1} bytes)')
     if int(registro.split('|')[0]) in hashmap_ids:
         print('Erro: já existe um registro com essa chave.\n')
@@ -205,10 +217,8 @@ def escreve_reg(arq, registro: str, hashmap_ids: dict = None, lista_led = None):
 
     arq.seek(pos_atual)
 
-def insertReg(arq, registro: str, hashmap_ids: dict, lista_led: list) -> None:
-    escreve_reg(arq, registro, hashmap_ids, lista_led)
-
 def leia_reg(file, com_offset: bool = False, compactar: bool = False) -> tuple | str | None:
+    """ o famoso leia registros, porém com novas funcionalidades, agora também retorna ponteiro e o tamanho do registro, para caso eu queira compactar/atualizar minha LED na memória"""
     offset = file.tell()
     tam_reg = file.read(2)
     if len(tam_reg) < 2:
@@ -238,6 +248,7 @@ def leia_reg(file, com_offset: bool = False, compactar: bool = False) -> tuple |
         return ''
 
 def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
+    """Faz um query nos ids via hashmap montado, isso reduz o custo de memória imensamente."""
     try:
         print(f'Busca pelo registro de chave "{id_reg}"')
         if id_reg not in hashmap_ids:
@@ -254,6 +265,7 @@ def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
         return f'Erro: {e}'
 
 def monta_hashmap(arq_file) -> dict:
+    """Como diz o nome da função, cria um hashmap formatado em dict(id, offset) e também a nossa lista_led[offset, tamanho], lista_led só atualiza caso encontre um ponteiro no id do registro *"""
     hashmap_ids = {}
     lista_led = []
     while True:
@@ -281,6 +293,7 @@ def monta_hashmap(arq_file) -> dict:
     return hashmap_ids, lista_led
 
 def imprime_led(arquivo):
+    """Só realmente faz a impressão da LED pelo offset apontado nos registros."""
     try:
         with open(arquivo, 'rb') as arq:
             arq.seek(0)
