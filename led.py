@@ -66,7 +66,7 @@ def atualizaReg(arq, lista):
                 offset_maior = lista[j][0]
                 break
         resto = buffer.split('|', 1)[1] if '|' in buffer else ''
-        novo_valor = f"{id_base}*{offset_maior}|".ljust(tam)
+        novo_valor = f"{id_base}*{offset_maior}|".ljust(tam, '\0')
 
         arq.seek(offset + 2)
         arq.write(novo_valor.encode())
