@@ -265,7 +265,7 @@ def buscaId(file, id_reg: int, hashmap_ids: dict) -> str | bool:
         return f'Erro: {e}'
 
 def monta_hashmap(arq_file) -> dict:
-    """Como diz o nome da função, cria um hashmap formatado em dict(id, offset) e também a nossa lista_led[offset, tamanho], lista_led só atualiza caso encontre um ponteiro no id do registro *"""
+    """Como diz o nome da função, cria um hashmap formatado em dict(id, offset) e também um outro como uma lista[offset, tamanho], lista_led só atualiza caso encontre um ponteiro no id do registro *, e também via atualizaReg"""
     hashmap_ids = {}
     lista_led = []
     while True:
