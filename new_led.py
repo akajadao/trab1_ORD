@@ -18,111 +18,102 @@ def updateLED(arq, offset_reg=0, tam_reg=0, buffer_reg=0, isRemove=False, isInse
     cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
 
     if isRemove:
+        # Remoção insere novo espaço na LED ordenada por endereço
         if cabecalho == -1:
-            # LED vazia, insere novo como cabeça
+            # LED vazia
             arq.seek(0)
             arq.write(offset_reg.to_bytes(4, 'big', signed=True))
             arq.seek(offset_reg)
             arq.write(tam_reg.to_bytes(2, 'big', signed=False))
             arq.write(b'*' + (-1).to_bytes(4, 'big', signed=True))
-            return
         else:
-            # Percorre LED até encontrar ponto de inserção
             prev_offset = None
             current_offset = cabecalho
-
             while current_offset != -1:
                 arq.seek(current_offset)
                 tam_atual = int.from_bytes(arq.read(2), 'big', signed=False)
-                marcador = arq.read(1)  # Deve ser b'*'
+                arq.read(1)  # marcador '*'
                 prox_offset = int.from_bytes(arq.read(4), 'big', signed=True)
-
-                if tam_reg < tam_atual:
+                if offset_reg > current_offset:
                     # Inserir antes do current_offset
                     arq.seek(offset_reg)
                     arq.write(tam_reg.to_bytes(2, 'big', signed=False))
                     arq.write(b'*' + current_offset.to_bytes(4, 'big', signed=True))
 
                     if prev_offset is None:
-                        # Inserção no topo
                         arq.seek(0)
                         arq.write(offset_reg.to_bytes(4, 'big', signed=True))
                     else:
-                        # Atualiza ponteiro do anterior
-                        arq.seek(prev_offset + 2 + 1)  # 2 bytes do tam + 1 do '*'
+                        arq.seek(prev_offset + 3)  # tam (2) + '*' (1)
                         arq.write(offset_reg.to_bytes(4, 'big', signed=True))
                     return
-
                 prev_offset = current_offset
                 current_offset = prox_offset
 
-            # Chegou ao fim, insere no final
+            # Insere ao final da lista
             arq.seek(offset_reg)
             arq.write(tam_reg.to_bytes(2, 'big', signed=False))
             arq.write(b'*' + (-1).to_bytes(4, 'big', signed=True))
+            arq.seek(prev_offset + 3)
+            arq.write(offset_reg.to_bytes(4, 'big', signed=True))
 
-            if prev_offset is not None:
-                arq.seek(prev_offset + 2 + 1)
-                arq.write(offset_reg.to_bytes(4, 'big', signed=True))
-                return
     if isInsert:
-            arq.seek(cabecalho)
-            dados = readReg(arq, isTam=True, isOffset=True)
-            old_reg, old_tam, old_offset = dados
-            print(old_reg)
-            if old_reg == -1:
-                if old_tam > (tam_reg):
-                    arq.seek(old_offset)
-                    arq.write(old_tam.to_bytes(2, 'big', signed=False))
-                    buffer = buffer_reg.ljust(old_tam, '\0')
-                    arq.write(buffer.encode())
-                    print(f'Local: offset = {old_offset} bytes ({hex(old_offset)})\n')
-                    arq.seek(0)
-                    arq.write((-1).to_bytes(4, 'big', signed=True))
-                    return
-                else:
-                    arq.seek(0, 2)                    
-                    arq.write(tam_reg.to_bytes(2), 'big', signed=False)
-                    buffer = buffer_reg.encode()
-                    arq.write(buffer)
-                    print('Local: fim do arquivo\n')
-                    return
+        # Estratégia BEST-FIT: menor espaço possível que acomoda
+        arq.seek(0)
+        cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
+
+        best_offset = None
+        best_size = None
+        best_prev = None
+
+        prev_offset = None
+        current_offset = cabecalho
+
+        while current_offset != -1:
+            arq.seek(current_offset)
+            tam = int.from_bytes(arq.read(2), 'big', signed=False)
+            arq.read(1)  # marcador '*'
+            prox = int.from_bytes(arq.read(4), 'big', signed=True)
+
+            if tam >= tam_reg and (best_size is None or tam < best_size):
+                best_offset = current_offset
+                best_size = tam
+                best_prev = prev_offset
+
+            prev_offset = current_offset
+            current_offset = prox
+
+        if best_offset is not None:
+            # Encontrou melhor encaixe
+            arq.seek(best_offset)
+            arq.read(2)  # já temos tam
+            arq.read(1)
+            prox = int.from_bytes(arq.read(4), 'big', signed=True)
+
+            # Escreve novo registro
+            arq.seek(best_offset)
+            arq.write(best_size.to_bytes(2, 'big', signed=False))
+            buffer = buffer_reg.ljust(best_size, '\0')
+            arq.write(buffer.encode())
+
+            # Atualiza LED
+            if best_prev is None:
+                # Era o primeiro da lista
+                arq.seek(0)
+                arq.write(prox.to_bytes(4, 'big', signed=True))
             else:
-                while True:
-                    print(old_reg)
-                    arq.seek(old_reg)
-                    new_dados = readReg(arq, isTam=True, isOffset=True)
-                    new_reg, new_tam, new_offset = new_dados
-                    if new_reg == -1:
-                        if new_tam > (tam_reg):
-                            arq.seek(old_reg)
-                            arq.write(new_tam.to_bytes(2, 'big', signed=False))
-                            buffer = buffer_reg.ljust(new_tam, '\0')
-                            arq.write(buffer.encode())
-                            print(f'Local: offset = {new_offset} bytes ({hex(new_offset)})')
-                            arq.seek(old_offset)
-                            arq.write(old_tam.to_bytes(2, 'big', signed=False))
-                            arq.write(b'*'+(-1).to_bytes(4, 'big', signed=True))
-                            return
-                        else:
-                            arq.seek(0,2)
-                            arq.write(tam_reg.to_bytes(2, 'big', signed=False))
-                            arq.write(buffer_reg.encode())
-                            print('Local: fim do arquivo')
-                            return
-                    else:
-                        if new_tam > (tam_reg):
-                            arq.seek(old_reg)
-                            arq.write(new_tam.to_bytes(2, 'big', signed=False))
-                            buffer = buffer_reg.ljust(new_tam, '\0')
-                            arq.write(buffer.encode())
-                            print(f'Local: offset = {new_offset} bytes ({hex(new_offset)})')
-                            arq.seek(old_offset)
-                            arq.write(old_tam.to_bytes(2, 'big', signed=False))
-                            arq.write(b'*'+new_reg.to_bytes(4, 'big', signed=True))
-                            return
-                        else:
-                            old_reg, old_tam, old_offset = new_reg, new_tam, new_offset
+                arq.seek(best_prev + 3)  # 2 bytes tam + 1 '*'
+                arq.write(prox.to_bytes(4, 'big', signed=True))
+
+            print(f'Local: offset = {best_offset} bytes ({hex(best_offset)})')
+        else:
+            # Não encontrou espaço: insere ao fim
+            arq.seek(0, 2)
+            pos = arq.tell()
+            arq.write(tam_reg.to_bytes(2, 'big', signed=False))
+            arq.write(buffer_reg.encode())
+            print('Local: fim do arquivo')
+
 
 def compactarArq(arq_file) -> None:
     """Função responsável pela remoção da fragmentação externa do arquivo binário.
@@ -183,8 +174,8 @@ def removeReg(arq, id_reg):
 
 def insertReg(arq, registro: str, cab: int):
     """Função que escreve os registros, para registros com espaço suficiente em um item da LED, é feita a comparação de tamanhos, o menor espaço suficiente encontrado será o escolhido, caso contrário, vai para o final do arquivo."""
-    print(f'Inserção do registro de chave "{registro.split('|')[0]}" ({len(registro)+2} bytes)')
     tam = len(registro)
+    print(f'Inserção do registro de chave "{registro.split('|')[0]}" ({tam} bytes)')
     if cab == -1:
         arq.seek(0,2)
         tam_bytes = int.to_bytes(tam, 2, 'big', signed=False)
@@ -233,6 +224,7 @@ def readReg(arq, isTam=False, isOffset=False):
     else:
         # Registro ativo
         conteudo = buffer.decode(errors='ignore')
+        print(tam)
         if isTam and isOffset:
             return conteudo, tam, pos
         if isTam:
