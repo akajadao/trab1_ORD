@@ -13,11 +13,11 @@ as alterações são salvas no arquivo em si.
 import sys
 import os
 
-def updateLED(arq, offset_reg, tam_reg, buffer_reg, isRemove=False, isInsert=False):
-    if isRemove:
-        arq.seek(0)
-        cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
+def updateLED(arq, offset_reg=0, tam_reg=0, buffer_reg=0, isRemove=False, isInsert=False):
+    arq.seek(0)
+    cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
 
+    if isRemove:
         if cabecalho == -1:
             # LED vazia, insere novo como cabeça
             arq.seek(0)
@@ -69,6 +69,7 @@ def updateLED(arq, offset_reg, tam_reg, buffer_reg, isRemove=False, isInsert=Fal
             arq.seek(cabecalho)
             dados = readReg(arq, isTam=True, isOffset=True)
             old_reg, old_tam, old_offset = dados
+            print(old_reg)
             if old_reg == -1:
                 if old_tam > (tam_reg):
                     arq.seek(old_offset)
@@ -88,6 +89,7 @@ def updateLED(arq, offset_reg, tam_reg, buffer_reg, isRemove=False, isInsert=Fal
                     return
             else:
                 while True:
+                    print(old_reg)
                     arq.seek(old_reg)
                     new_dados = readReg(arq, isTam=True, isOffset=True)
                     new_reg, new_tam, new_offset = new_dados
@@ -117,7 +119,7 @@ def updateLED(arq, offset_reg, tam_reg, buffer_reg, isRemove=False, isInsert=Fal
                             print(f'Local: offset = {new_offset} bytes ({hex(new_offset)})')
                             arq.seek(old_offset)
                             arq.write(old_tam.to_bytes(2, 'big', signed=False))
-                            arq.write(b'+'+new_reg.to_bytes(4, 'big', signed=True))
+                            arq.write(b'*'+new_reg.to_bytes(4, 'big', signed=True))
                             return
                         else:
                             old_reg, old_tam, old_offset = new_reg, new_tam, new_offset
@@ -191,7 +193,7 @@ def insertReg(arq, registro: str, cab: int):
         arq.write(registro_bytes)
         print(f'Local: fim do arquivo\n')
     else:
-        updateLED(arq, tam_reg=tam, buffer_reg=registro)
+        updateLED(arq, offset_reg=0, tam_reg=tam, buffer_reg=registro, isInsert=True)
 
 def readReg(arq, isTam=False, isOffset=False):
     """
@@ -254,7 +256,7 @@ def buscaId(arq, id_reg):
         reg, tam, offset = dados
 
         # Ignora registros removidos logicamente (marcados com '*')
-        if reg.startswith('*'):
+        if isinstance(reg, int):
             continue
 
         campos = reg.split('|')
@@ -353,8 +355,11 @@ def main():
 
                         elif op == 'i':
                             # insere registro
+                            arq.seek(0)
+                            cabecalho_bytes = arq.read(4)
+                            cabecalho = int.from_bytes(cabecalho_bytes, byteorder='big', signed=True)
                             registro = dado
-                            insertReg(arq, registro)
+                            insertReg(arq, registro, cabecalho)
 
                         elif op == 'r':
                             # remove registro
