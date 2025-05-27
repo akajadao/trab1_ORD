@@ -13,137 +13,114 @@ as alterações são salvas no arquivo em si.
 import sys
 import os
 
-def updateLED(arq, offset_reg, tam_reg, isRemove=True):
-    first = True
-    arq.seek(0)
-    cab = arq.read(4)
-    cabecalho = int.from_bytes(cab, 'big', signed=True)
+def updateLED(arq, offset_reg, tam_reg, buffer_reg, isRemove=False, isInsert=False):
     if isRemove:
+        arq.seek(0)
+        cabecalho = int.from_bytes(arq.read(4), 'big', signed=True)
+
         if cabecalho == -1:
+            # LED vazia, insere novo como cabeça
             arq.seek(0)
-            offset_led = offset_reg.to_bytes(4, 'big', signed=True)
-            arq.write(offset_led)
+            arq.write(offset_reg.to_bytes(4, 'big', signed=True))
             arq.seek(offset_reg)
-            reg_led = b'*'+(-1).to_bytes(4, 'big', signed=True)
             arq.write(tam_reg.to_bytes(2, 'big', signed=False))
-            arq.write(reg_led)
+            arq.write(b'*' + (-1).to_bytes(4, 'big', signed=True))
             return
         else:
+            # Percorre LED até encontrar ponto de inserção
+            prev_offset = None
+            current_offset = cabecalho
+
+            while current_offset != -1:
+                arq.seek(current_offset)
+                tam_atual = int.from_bytes(arq.read(2), 'big', signed=False)
+                marcador = arq.read(1)  # Deve ser b'*'
+                prox_offset = int.from_bytes(arq.read(4), 'big', signed=True)
+
+                if tam_reg < tam_atual:
+                    # Inserir antes do current_offset
+                    arq.seek(offset_reg)
+                    arq.write(tam_reg.to_bytes(2, 'big', signed=False))
+                    arq.write(b'*' + current_offset.to_bytes(4, 'big', signed=True))
+
+                    if prev_offset is None:
+                        # Inserção no topo
+                        arq.seek(0)
+                        arq.write(offset_reg.to_bytes(4, 'big', signed=True))
+                    else:
+                        # Atualiza ponteiro do anterior
+                        arq.seek(prev_offset + 2 + 1)  # 2 bytes do tam + 1 do '*'
+                        arq.write(offset_reg.to_bytes(4, 'big', signed=True))
+                    return
+
+                prev_offset = current_offset
+                current_offset = prox_offset
+
+            # Chegou ao fim, insere no final
+            arq.seek(offset_reg)
+            arq.write(tam_reg.to_bytes(2, 'big', signed=False))
+            arq.write(b'*' + (-1).to_bytes(4, 'big', signed=True))
+
+            if prev_offset is not None:
+                arq.seek(prev_offset + 2 + 1)
+                arq.write(offset_reg.to_bytes(4, 'big', signed=True))
+                return
+    if isInsert:
             arq.seek(cabecalho)
             dados = readReg(arq, isTam=True, isOffset=True)
             old_reg, old_tam, old_offset = dados
-            while True:
-                if old_tam > tam_reg:
-                    arq.seek(offset_reg)
-                    reg_led = b'*'+old_offset.to_bytes(4, 'big', signed=True)
-                    arq.write(tam_reg.to_bytes(2, 'big', signed=False))
-                    arq.write(reg_led)
-                    if first == True:
-                        arq.seek(0)
-                        arq.write(offset_reg.to_bytes(4,'big', signed=True))
-                        ## escreveu no topo
-                        return
-                    first = False                    
-                    return
-                if old_tam < tam_reg:
+            if old_reg == -1:
+                if old_tam > (tam_reg):
                     arq.seek(old_offset)
-                    arq.write(old_tam.to_bytes(2,'big',signed=False))
-                    old_led = b'*'+offset_reg.to_bytes(4, 'big', signed=True)
-                    arq.write(old_led)
-                    arq.seek(offset_reg)
-                    if (old_reg == -1) and (first == True):
-                        arq.write(tam_reg.to_bytes(2, 'big', signed=False))
-                        reg_led = b'*'+(-1).to_bytes(4,'big', signed=True)
-                        arq.write(reg_led)
-                        return
-                first = False
-                count += 1
-                dados = readReg(arq, isTam=True,isOffset=True)
-                old_reg, old_tam, old_offset = dados
-            
-def insereNaLEDBestFit(arq, offset_removido, tam_removido, cabecalho):
-    """
-    Insere o espaço removido na LED usando a estratégia Best Fit.
-    Atualiza os ponteiros da lista encadeada de espaços disponíveis.
-    """
-    arq.seek(0)
-    if cabecalho == -1:
-        # LED vazia
-        arq.write(offset_removido.to_bytes(4, 'big', signed=True))
-        arq.seek(offset_removido)
-        reg_led = b'*'+ (-1).to_bytes(4, 'big', signed=True)  # ponteiro para próximo
-        arq.write(tam_removido.to_bytes(2, 'big'))
-        arq.write(reg_led)
-        return
-
-    # Busca Best Fit
-    offset_atual = cabecalho
-    offset_anterior = None
-    melhor_offset = None
-    melhor_tam = None
-    melhor_anterior = None
-
-    while offset_atual != -1:
-        arq.seek(offset_atual)
-        tam_bytes = arq.read(2)
-        tam_led = int.from_bytes(tam_bytes, 'big', signed=False)
-        marcador = arq.read(1)
-        ponteiro_prox = int.from_bytes(arq.read(4), 'big', signed=True)
-
-        if tam_led >= tam_removido:
-            if melhor_tam is None or tam_led < melhor_tam:
-                melhor_offset = offset_atual
-                melhor_tam = tam_led
-                melhor_anterior = offset_anterior
-
-        offset_anterior = offset_atual
-        offset_atual = ponteiro_prox
-
-    # Inserção ordenada
-    if melhor_anterior is None:
-        # Inserir no topo da LED
-        arq.seek(offset_removido)
-        arq.write(tam_removido.to_bytes(2, 'big', signed=False))
-        arq.write(b'*')
-        arq.write(cabecalho.to_bytes(4, 'big', signed=True))
-
-        # Atualiza cabeçalho
-        arq.seek(0)
-        arq.write(offset_removido.to_bytes(4, 'big', signed=True))
-    else:
-        # Inserir após melhor_anterior e antes de melhor_offset
-        arq.seek(melhor_anterior + 2 + 1)  # após tam e '*'
-        arq.write(offset_removido.to_bytes(4, 'big', signed=True))
-
-        arq.seek(offset_removido)
-        arq.write(tam_removido.to_bytes(2, 'big'))
-        arq.write(b'*')
-        prox = melhor_offset if melhor_offset is not None else -1
-        arq.write(prox.to_bytes(4, 'big', signed=True))
-
-def recursivaInsert(arq, tam, offset, registro):
-    arq.seek(offset)
-    new_offset, tam_led = readReg(arq, isTam=True)
-
-    if tam_led >= tam:
-        tam_bytes = int.to_bytes(tam_led, 2, 'big', signed=False)
-        registro_bytes = registro.encode().ljust(tam_led, b'\0')
-        arq.seek(offset)
-        arq.write(tam_bytes)
-        arq.write(registro_bytes)
-        print(f'Local: offset = {offset} bytes ({hex(offset)})\n')
-        return
-
-    if new_offset != -1:
-        recursivaInsert(arq, tam, new_offset, registro)
-    else:
-        arq.seek(0, 2)  # Fim do arquivo
-        tam_bytes = int.to_bytes(tam, 2, 'big', signed=False)
-        registro_bytes = registro.encode().ljust(tam, b'\0')
-        arq.write(tam_bytes)
-        arq.write(registro_bytes)
-        print(f'Local: fim do arquivo\n')
-        return
+                    arq.write(old_tam.to_bytes(2, 'big', signed=False))
+                    buffer = buffer_reg.ljust(old_tam, '\0')
+                    arq.write(buffer.encode())
+                    print(f'Local: offset = {old_offset} bytes ({hex(old_offset)})\n')
+                    arq.seek(0)
+                    arq.write((-1).to_bytes(4, 'big', signed=True))
+                    return
+                else:
+                    arq.seek(0, 2)                    
+                    arq.write(tam_reg.to_bytes(2), 'big', signed=False)
+                    buffer = buffer_reg.encode()
+                    arq.write(buffer)
+                    print('Local: fim do arquivo\n')
+                    return
+            else:
+                while True:
+                    arq.seek(old_reg)
+                    new_dados = readReg(arq, isTam=True, isOffset=True)
+                    new_reg, new_tam, new_offset = new_dados
+                    if new_reg == -1:
+                        if new_tam > (tam_reg):
+                            arq.seek(old_reg)
+                            arq.write(new_tam.to_bytes(2, 'big', signed=False))
+                            buffer = buffer_reg.ljust(new_tam, '\0')
+                            arq.write(buffer.encode())
+                            print(f'Local: offset = {new_offset} bytes ({hex(new_offset)})')
+                            arq.seek(old_offset)
+                            arq.write(old_tam.to_bytes(2, 'big', signed=False))
+                            arq.write(b'*'+(-1).to_bytes(4, 'big', signed=True))
+                            return
+                        else:
+                            arq.seek(0,2)
+                            arq.write(tam_reg.to_bytes(2, 'big', signed=False))
+                            arq.write(buffer_reg.encode())
+                            print('Local: fim do arquivo')
+                            return
+                    else:
+                        if new_tam > (tam_reg):
+                            arq.seek(old_reg)
+                            arq.write(new_tam.to_bytes(2, 'big', signed=False))
+                            buffer = buffer_reg.ljust(new_tam, '\0')
+                            arq.write(buffer.encode())
+                            print(f'Local: offset = {new_offset} bytes ({hex(new_offset)})')
+                            arq.seek(old_offset)
+                            arq.write(old_tam.to_bytes(2, 'big', signed=False))
+                            arq.write(b'+'+new_reg.to_bytes(4, 'big', signed=True))
+                            return
+                        else:
+                            old_reg, old_tam, old_offset = new_reg, new_tam, new_offset
 
 def compactarArq(arq_file) -> None:
     """Função responsável pela remoção da fragmentação externa do arquivo binário.
@@ -190,13 +167,12 @@ def removeReg(arq, id_reg):
         if not dados:
             break
         reg, tam, offset = dados
-
         if isinstance(reg, int):
             continue
         campos = reg.split('|')
         if int(campos[0]) == int(id_reg):
             # Marcar como removido, mantendo os dados antigos
-            updateLED(arq, offset, tam)
+            updateLED(arq, offset, tam, reg, isRemove = True)
             print(f'Registro removido! ({tam} bytes)')
             print(f'Local: offset = {offset} bytes ({hex(offset)})\n')
             return offset, tam
@@ -215,7 +191,7 @@ def insertReg(arq, registro: str, cab: int):
         arq.write(registro_bytes)
         print(f'Local: fim do arquivo\n')
     else:
-        recursivaInsert(arq, tam, cab, registro)
+        updateLED(arq, tam_reg=tam, buffer_reg=registro)
 
 def readReg(arq, isTam=False, isOffset=False):
     """
@@ -263,6 +239,7 @@ def readReg(arq, isTam=False, isOffset=False):
             return conteudo, pos
         else:
             return conteudo
+    return None
 
 def buscaId(arq, id_reg):
     """Percorre o arquivo buscando um registro com o ID especificado."""
@@ -320,6 +297,7 @@ def imprime_led(arquivo):
                 output += f" -> [offset: {cab}, tam: {tam}]"
                 total += 1
                 cab = prox
+            
 
             output += " -> fim"
             print(output)
@@ -376,7 +354,7 @@ def main():
                         elif op == 'i':
                             # insere registro
                             registro = dado
-                            insertReg(arq, registro, cabecalho)
+                            insertReg(arq, registro)
 
                         elif op == 'r':
                             # remove registro
