@@ -23,9 +23,9 @@ def main():
     """Apenas a função main, que chama as outras funções."""
     if len(argv) < 2:
         print("Uso:")
-        print("  python led.py -p <arquivo>       # Para imprimir a LED")
-        print("  python led.py -e <arquivo>       # Para realizar operações")
-        print("  python led.py -c <arquivo>       # Para compactar o arquivo")
+        print("  python main.py -p <arquivo_binario>       # Para imprimir a LED")
+        print("  python main.py -e <arquivo_binario> <arquivo_operacoes>      # Para realizar operações")
+        print("  python main.py -c <arquivo_binario>       # Para compactar o arquivo_binario")
         return
 
     flag = argv[1]
