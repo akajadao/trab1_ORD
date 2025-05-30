@@ -1,0 +1,37 @@
+def addLed(arq, actOffset, size, offset, prevOffset = None, prevSize = None, nextOffset = None):
+    if actOffset == -1 and prevOffset is None:
+        arq.seek(offset+2)
+        arq.write(b'*'+(-1).to_bytes(4, 'big', signed=True))
+        arq.seek(0)
+        arq.write(offset.to_bytes(4, 'big', signed=True))
+        print(f'Local: offset = {offset} bytes ({hex(offset)}).\n')
+        return True
+    
+    arq.seek(actOffset)
+    pointerSize = int.from_bytes(arq.read(2), 'big', signed=False)
+    arq.read(1)
+    nextOffset = int.from_bytes(arq.read(4), 'big', signed=True)
+    if pointerSize > size:
+        arq.seek(offset)
+        arq.write(size.to_bytes(2, 'big', signed=False))
+        arq.write(b'*'+(actOffset).to_bytes(4, 'big', signed=True))
+        print(f'Local: offset = {offset} bytes ({hex(offset)}).\n')
+        if prevOffset is None:
+            arq.seek(0)
+            arq.write(offset.to_bytes(4, 'big', signed=True))
+            return True
+        else:
+            arq.seek(prevOffset)
+            arq.write(prevSize.to_bytes(2, 'big', signed=False))
+            arq.write(b'*'+(offset).to_bytes(4, 'big', signed=True))
+            return True
+    if size > pointerSize and nextOffset == -1:
+        arq.seek(actOffset)
+        arq.write(pointerSize.to_bytes(2, 'big', signed=False))
+        arq.write(b'*'+offset.to_bytes(4, 'big', signed=True))
+        arq.seek(offset)
+        arq.write(size.to_bytes(2, 'big', signed=False))
+        arq.write(b'*'+(-1).to_bytes(4, 'big', signed=True))
+        print(f'Local: offset = {offset} bytes ({hex(offset)}).\n')
+        return True
+    addLed(arq, nextOffset, size, offset, actOffset, pointerSize, nextOffset)
