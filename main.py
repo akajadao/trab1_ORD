@@ -1,4 +1,16 @@
-import os
+"""
+Trabalho 1 - Organização e Recuperação de Dados
+
+   Aluno: Jader Alves dos Santos
+   RA: 120286
+   
+   Aluna: Janaina Maria Cera da Silva
+   RA: 115832
+   
+   Aluno: Lucas Rodrigues Fedrigo
+   RA: 129060
+"""
+
 from sys import argv
 from readLed import readLed
 from findRegister import findRegister
@@ -8,6 +20,7 @@ from defragFile import defragFile
 
 
 def main():
+    """Apenas a função main, que chama as outras funções."""
     if len(argv) < 2:
         print("Uso:")
         print("  python led.py -p <arquivo>       # Para imprimir a LED")

@@ -1,10 +1,10 @@
 def readReg(arq, readLed=False):
     """
-    Lê um registro do arquivo e retorna, conforme os parâmetros:
-    - o buffer do conteúdo
-    - o sizeanho (em bytes)
-    - o offset no arquivo
-    Se o registro estiver marcado como removido (começa com '*'), retorna o ponteiro LED.
+    Reads a record from the file and returns, according to the parameters:
+    - the buffer content
+    - the size (in bytes)
+    - the offset in the file
+    If the record is marked as removed (starts with '*'), returns the LED pointer.
     """
     offset = arq.tell()
     sizeBytes = arq.read(2)

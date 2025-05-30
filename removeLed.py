@@ -1,4 +1,5 @@
 def removeLed(arq, buffer, actOffset, size, prevOffset = None, prevSize = None, nextOffset = None):
+    """Removes a pointer from the LED file at the specified offset."""
     if actOffset == -1 and prevOffset is None:
         arq.seek(0, 2)
         arq.write(size.to_bytes(2, 'big', signed=False))

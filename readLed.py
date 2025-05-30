@@ -1,7 +1,7 @@
 from readReg import readReg
 
 def readLed(arq, header):
-    """Só realmente faz a impressão da LED pelo offset apontado nos registros."""
+    """This function just print the LED to user."""
     try:
         if header == -1:
             print("LED -> fim")
