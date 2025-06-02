@@ -1,5 +1,5 @@
 def addLed(arq, actOffset, size, offset, prevOffset = None, prevSize = None, nextOffset = None):
-    """Adds a new pointer to the LED file at the specified offset.
+    """Adds a new pointer to the LED at the specified offset.
     If the pointer already exists, it updates the size and pointer accordingly to the size.
     If the pointer does not exist, it creates a new pointer at the specified offset.
     If the pointer is larger than the size, it updates the pointer to the new size.

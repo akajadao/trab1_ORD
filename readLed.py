@@ -12,8 +12,8 @@ def readLed(arq, header):
         output = "LED"
         while header != -1:
             arq.seek(header)
-            dados = readReg(arq, readLed=True)
-            buffer, tam, offset = dados
+            data = readReg(arq, readLed=True)
+            buffer, size, offset = data
             if buffer == None:
                 break
             try:
@@ -21,7 +21,7 @@ def readLed(arq, header):
             except Exception as e:
                 print(e)
                 break
-            output += f" -> [offset: {header}, tam: {tam}]"
+            output += f" -> [offset: {header}, tam: {size}]"
             total += 1
             header = prox
         
