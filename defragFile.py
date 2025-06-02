@@ -39,3 +39,4 @@ def defragFile(arq: BinaryIO) -> None:
             write_ptr = offset + 2 + size
 
         read_ptr = offset + 2 + size
+    return
