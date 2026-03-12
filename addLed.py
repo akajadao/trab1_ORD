@@ -27,7 +27,7 @@ def addLed(
     arq.read(1)
     nextOffset = int.from_bytes(arq.read(4), 'big', signed=True)
 
-    if pointerSize > size:
+    if pointerSize >= size:
         arq.seek(offset)
         arq.write(size.to_bytes(2, 'big', signed=False))
         arq.write(b'*' + actOffset.to_bytes(4, 'big', signed=True))
